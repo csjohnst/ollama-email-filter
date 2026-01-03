@@ -1,0 +1,11 @@
+version: '3.8'
+
+# Example: Using OpenAI API
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.openai.yml up -d
+
+services:
+  email-assistant:
+    environment:
+      - EMAILASSISTANT_AISettings__Provider=openai
+      - EMAILASSISTANT_AISettings__OpenAI__ApiKey=${OPENAI_API_KEY}
+      - EMAILASSISTANT_AISettings__OpenAI__Model=${OPENAI_MODEL:-gpt-4.1-nano}

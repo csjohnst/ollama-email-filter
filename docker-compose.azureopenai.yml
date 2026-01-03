@@ -1,0 +1,13 @@
+version: '3.8'
+
+# Example: Using Azure OpenAI API
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.azureopenai.yml up -d
+
+services:
+  email-assistant:
+    environment:
+      - EMAILASSISTANT_AISettings__Provider=azureopenai
+      - EMAILASSISTANT_AISettings__AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY}
+      - EMAILASSISTANT_AISettings__AzureOpenAI__Endpoint=${AZURE_OPENAI_ENDPOINT}
+      - EMAILASSISTANT_AISettings__AzureOpenAI__DeploymentName=${AZURE_OPENAI_DEPLOYMENT}
+      - EMAILASSISTANT_AISettings__AzureOpenAI__ApiVersion=${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}

@@ -1,0 +1,37 @@
+# Build artifacts
+bin/
+obj/
+out/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Local config with secrets
+appsettings.local.json
+*.local.json
+.env
+
+# Documentation
+*.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker (don't include docker files in the build context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Misc
+*.log
+*.tmp

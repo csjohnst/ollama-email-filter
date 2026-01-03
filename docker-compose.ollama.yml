@@ -1,0 +1,44 @@
+version: '3.8'
+
+# Example: Using local Ollama service
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.ollama.yml up -d
+
+services:
+  email-assistant:
+    environment:
+      - EMAILASSISTANT_AISettings__Provider=ollama
+      - EMAILASSISTANT_AISettings__Ollama__BaseUrl=http://ollama:11434
+      - EMAILASSISTANT_AISettings__Ollama__ModelName=${OLLAMA_MODEL:-llama3}
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - email-assistant-network
+    # GPU support (uncomment for NVIDIA GPUs)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  ollama-data:

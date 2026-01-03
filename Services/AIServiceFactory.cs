@@ -4,7 +4,7 @@ namespace OllamaEmailFilter
 {
     public static class AIServiceFactory
     {
-        public static IAIService CreateAIService(IConfigurationRoot configuration)
+        public static IAIService CreateAIService(IConfiguration configuration)
         {
             var provider = configuration["AISettings:Provider"]?.ToLowerInvariant();
 
