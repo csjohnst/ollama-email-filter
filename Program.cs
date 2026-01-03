@@ -19,6 +19,7 @@ builder.Configuration
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.Configure<AISettings>(builder.Configuration.GetSection("AISettings"));
 builder.Services.Configure<ServiceSettings>(builder.Configuration.GetSection("ServiceSettings"));
+builder.Services.Configure<CategorySettings>(builder.Configuration.GetSection("CategorySettings"));
 
 // Register AI service as singleton
 builder.Services.AddSingleton<IAIService>(sp =>
@@ -83,6 +84,18 @@ app.MapGet("/health/ready", async (HealthCheckService healthCheckService) =>
 app.Logger.LogInformation("Email Assistant Service starting...");
 app.Logger.LogInformation("AI Provider: {Provider}", builder.Configuration["AISettings:Provider"] ?? "ollama");
 app.Logger.LogInformation("Health check endpoint: http://0.0.0.0:{Port}/health", serviceSettings.HealthCheckPort);
+
+var categorySettings = builder.Configuration.GetSection("CategorySettings").Get<CategorySettings>();
+if (categorySettings?.EnableCategories == true)
+{
+    var enabledCategories = categorySettings.GetEnabledCategoryNames().ToList();
+    app.Logger.LogInformation("Email categorization enabled with {Count} categories: {Categories}",
+        enabledCategories.Count, string.Join(", ", enabledCategories));
+}
+else
+{
+    app.Logger.LogInformation("Email categorization disabled");
+}
 
 await app.RunAsync();
 

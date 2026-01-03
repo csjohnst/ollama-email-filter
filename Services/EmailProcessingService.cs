@@ -13,17 +13,20 @@ public class EmailProcessingService : IEmailProcessingService
     private readonly ILogger<EmailProcessingService> _logger;
     private readonly EmailSettings _emailSettings;
     private readonly AISettings _aiSettings;
+    private readonly CategorySettings _categorySettings;
     private readonly IAIService _aiService;
 
     public EmailProcessingService(
         ILogger<EmailProcessingService> logger,
         IOptions<EmailSettings> emailSettings,
         IOptions<AISettings> aiSettings,
+        IOptions<CategorySettings> categorySettings,
         IAIService aiService)
     {
         _logger = logger;
         _emailSettings = emailSettings.Value;
         _aiSettings = aiSettings.Value;
+        _categorySettings = categorySettings.Value;
         _aiService = aiService;
     }
 
@@ -49,10 +52,62 @@ public class EmailProcessingService : IEmailProcessingService
 
     private string BuildPrompt()
     {
-        var promptTemplate = _aiSettings.PromptTemplate;
-        if (string.IsNullOrWhiteSpace(promptTemplate))
+        string promptTemplate;
+
+        // Use category template if categories are enabled
+        if (_categorySettings.EnableCategories)
         {
-            promptTemplate = @"
+            promptTemplate = _aiSettings.CategoryPromptTemplate;
+            if (string.IsNullOrWhiteSpace(promptTemplate))
+            {
+                promptTemplate = @"
+You are an email assistant. Your task is to rate the importance and categorize the following email.
+
+Rating Criteria:
+{PromptRatings}
+
+Available Categories:
+{Categories}
+
+Instructions:
+- Rate the email's importance from 0 (not important) to 10 (very important).
+- Assign the email to ONE category from the list above, or use null if no category fits.
+- Only output a single JSON object in the following format:
+
+{
+  ""Subject"": ""<subject>"",
+  ""From"": ""<from>"",
+  ""Date"": ""<date>"",
+  ""Rating"": <number>,
+  ""Category"": ""<category or null>""
+}
+
+Do not include any explanation, extra text, or formatting outside the JSON object.
+
+Here is the email:
+{EmailJson}";
+            }
+
+            // Build category list for prompt
+            var enabledCategories = _categorySettings.Categories
+                .Where(c => c.Value.Enabled)
+                .Select(c => $"- {c.Key}: {c.Value.Description}")
+                .ToList();
+
+            var categoriesText = enabledCategories.Count > 0
+                ? string.Join("\n", enabledCategories)
+                : "No categories configured";
+
+            promptTemplate = promptTemplate
+                .Replace("{PromptRatings}", _aiSettings.PromptRatings ?? "")
+                .Replace("{Categories}", categoriesText);
+        }
+        else
+        {
+            promptTemplate = _aiSettings.PromptTemplate;
+            if (string.IsNullOrWhiteSpace(promptTemplate))
+            {
+                promptTemplate = @"
 You are to rate this email based on the following criteria:
 
 {PromptRatings}
@@ -71,9 +126,12 @@ Here is an example:
 
 input:
 {EmailJson}";
+            }
+
+            promptTemplate = promptTemplate.Replace("{PromptRatings}", _aiSettings.PromptRatings ?? "");
         }
 
-        return promptTemplate.Replace("{PromptRatings}", _aiSettings.PromptRatings ?? "");
+        return promptTemplate;
     }
 
     private async Task ConnectAndAuthenticateAsync(ImapClient client, CancellationToken cancellationToken)
@@ -93,7 +151,9 @@ input:
         IMailFolder? junkFolder = null;
         IMailFolder? archivedFolder = null;
         IMailFolder? notificationsFolder = null;
+        var categoryFolders = new Dictionary<string, IMailFolder?>();
 
+        // Get or create Junk folder
         try
         {
             junkFolder = await client.GetFolderAsync("Junk", cancellationToken);
@@ -117,6 +177,7 @@ input:
             }
         }
 
+        // Get or create Archived folder
         try
         {
             archivedFolder = await client.GetFolderAsync("Archived", cancellationToken);
@@ -133,6 +194,7 @@ input:
             }
         }
 
+        // Get or create Notifications folder
         try
         {
             notificationsFolder = await client.GetFolderAsync("Notifications", cancellationToken);
@@ -149,7 +211,41 @@ input:
             }
         }
 
-        return new EmailFolders(junkFolder, archivedFolder, notificationsFolder);
+        // Get or create category folders as subfolders of Inbox
+        if (_categorySettings.EnableCategories)
+        {
+            foreach (var category in _categorySettings.Categories.Where(c => c.Value.Enabled))
+            {
+                var folderName = string.IsNullOrWhiteSpace(category.Value.FolderName)
+                    ? category.Key
+                    : category.Value.FolderName;
+
+                IMailFolder? categoryFolder = null;
+                try
+                {
+                    // Try to get existing subfolder of inbox
+                    categoryFolder = await inbox.GetSubfolderAsync(folderName, cancellationToken);
+                }
+                catch
+                {
+                    try
+                    {
+                        // Create as subfolder of inbox
+                        categoryFolder = await inbox.CreateAsync(folderName, true, cancellationToken);
+                        _logger.LogInformation("Created category folder: Inbox/{FolderName}", folderName);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Could not create category folder {FolderName}: {Message}",
+                            folderName, ex.Message);
+                    }
+                }
+
+                categoryFolders[category.Key] = categoryFolder;
+            }
+        }
+
+        return new EmailFolders(junkFolder, archivedFolder, notificationsFolder, categoryFolders);
     }
 
     private async Task ProcessInboxAsync(
@@ -252,6 +348,8 @@ input:
 
             dynamic? emailRating = JsonConvert.DeserializeObject(response);
             int? rating = null;
+            string? category = null;
+
             if (emailRating != null)
             {
                 try
@@ -261,13 +359,27 @@ input:
                     {
                         rating = (int?)Convert.ToInt32(ratingProperty.ToString());
                     }
+
+                    // Parse category if categories are enabled
+                    if (_categorySettings.EnableCategories)
+                    {
+                        var categoryProperty = emailRating.Category;
+                        if (categoryProperty != null)
+                        {
+                            var categoryValue = categoryProperty.ToString();
+                            if (!string.IsNullOrWhiteSpace(categoryValue) && categoryValue.ToLower() != "null")
+                            {
+                                category = categoryValue;
+                            }
+                        }
+                    }
                 }
                 catch { }
             }
 
             if (rating.HasValue)
             {
-                await ApplyRatingActionAsync(inbox, messageSummary, folders, rating.Value, cancellationToken);
+                await ApplyRatingActionAsync(inbox, messageSummary, folders, rating.Value, category, cancellationToken);
             }
             else
             {
@@ -285,8 +397,53 @@ input:
         IMessageSummary messageSummary,
         EmailFolders folders,
         int rating,
+        string? category,
         CancellationToken cancellationToken)
     {
+        // Step 1: If categories enabled and category matched, move to category folder first
+        if (_categorySettings.EnableCategories && !string.IsNullOrWhiteSpace(category))
+        {
+            if (folders.CategoryFolders.TryGetValue(category, out var categoryFolder) && categoryFolder != null)
+            {
+                try
+                {
+                    await inbox.MoveToAsync(messageSummary.UniqueId, categoryFolder, cancellationToken);
+                    _logger.LogInformation("Rating {Rating}, Category {Category}: Moved to Inbox/{FolderName}",
+                        rating, category, _categorySettings.GetFolderName(category));
+
+                    // After moving, we need to work with the message in the new folder
+                    // For rating actions (flagging), we need to re-fetch in the category folder
+                    if (rating >= 7)
+                    {
+                        await categoryFolder.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
+                        // Find the message in the new folder (it will be the most recent)
+                        var newSummaries = await categoryFolder.FetchAsync(
+                            categoryFolder.Count - 1, categoryFolder.Count - 1,
+                            MessageSummaryItems.UniqueId, cancellationToken);
+                        var newSummary = newSummaries.FirstOrDefault();
+                        if (newSummary != null)
+                        {
+                            await categoryFolder.AddFlagsAsync(newSummary.UniqueId, MessageFlags.Flagged, true, cancellationToken);
+                            _logger.LogInformation("Marked as important (flagged)");
+                        }
+                        // Re-open inbox for further processing
+                        await inbox.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
+                    }
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Failed to move to category folder {Category}: {Message}. Falling back to rating-based action.",
+                        category, ex.Message);
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Category {Category} not found in enabled folders, using rating-based action", category);
+            }
+        }
+
+        // Step 2: Apply rating-based actions (if not moved to category or as fallback)
         if (rating >= 7)
         {
             _logger.LogInformation("Rating {Rating}: This email is very important, marking as flagged", rating);
@@ -338,7 +495,11 @@ input:
         }
     }
 
-    private record EmailFolders(IMailFolder? Junk, IMailFolder? Archived, IMailFolder? Notifications);
+    private record EmailFolders(
+        IMailFolder? Junk,
+        IMailFolder? Archived,
+        IMailFolder? Notifications,
+        Dictionary<string, IMailFolder?> CategoryFolders);
 
     private class EmailData
     {

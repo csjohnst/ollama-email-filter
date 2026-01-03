@@ -4,6 +4,7 @@ public class AISettings
 {
     public string Provider { get; set; } = "ollama";
     public string PromptTemplate { get; set; } = string.Empty;
+    public string CategoryPromptTemplate { get; set; } = string.Empty;
     public string PromptRatings { get; set; } = string.Empty;
     public OllamaSettings Ollama { get; set; } = new();
     public OpenAISettings OpenAI { get; set; } = new();

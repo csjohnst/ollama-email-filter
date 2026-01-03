@@ -8,6 +8,7 @@ This is just a personal weekend project, created to scratch an itch. Do with it 
 
 - Continuously polls your IMAP inbox for new emails
 - Uses AI to rate email importance (0-10 scale)
+- **Optional email categorization** into Inbox subfolders (Bills, Shopping, Work, etc.)
 - Automatically organizes emails based on rating:
   - **Rating 7+**: Flagged as important
   - **Rating 4-6**: Left unread for review
@@ -126,6 +127,55 @@ All environment variables use the `EMAILASSISTANT_` prefix with double underscor
 |----------|---------|
 | `ANTHROPIC_API_KEY` | (required) |
 | `ANTHROPIC_MODEL` | claude-3-haiku-20240307 |
+
+## Email Categorization (Optional)
+
+When enabled, emails are automatically sorted into Inbox subfolders based on content. The AI determines both the importance rating AND the appropriate category.
+
+### Enable Categories
+
+```bash
+ENABLE_CATEGORIES=true
+```
+
+### Available Categories
+
+| Category | Default | Folder | Description |
+|----------|---------|--------|-------------|
+| Bills | Enabled | Inbox/Bills | Household bills, invoices, payment notices |
+| Shopping | Enabled | Inbox/Shopping | Order confirmations, shipping, receipts |
+| Work | Enabled | Inbox/Work | Work-related, job opportunities |
+| Personal | Enabled | Inbox/Personal | Personal correspondence from family/friends |
+| Education | Disabled | Inbox/Education | School notices, courses, learning |
+| Social | Disabled | Inbox/Social | Social media notifications |
+| Events | Disabled | Inbox/Events | Invitations, calendar events, RSVPs |
+| Travel | Disabled | Inbox/Travel | Flights, hotels, itineraries |
+| Finance | Disabled | Inbox/Finance | Banking, investments, statements |
+| Health | Disabled | Inbox/Health | Medical appointments, prescriptions |
+
+### Category Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_CATEGORIES` | false | Master toggle for categorization |
+| `CATEGORY_BILLS_ENABLED` | true | Enable Bills category |
+| `CATEGORY_SHOPPING_ENABLED` | true | Enable Shopping category |
+| `CATEGORY_WORK_ENABLED` | true | Enable Work category |
+| `CATEGORY_PERSONAL_ENABLED` | true | Enable Personal category |
+| `CATEGORY_EDUCATION_ENABLED` | false | Enable Education category |
+| `CATEGORY_SOCIAL_ENABLED` | false | Enable Social category |
+| `CATEGORY_EVENTS_ENABLED` | false | Enable Events category |
+| `CATEGORY_TRAVEL_ENABLED` | false | Enable Travel category |
+| `CATEGORY_FINANCE_ENABLED` | false | Enable Finance category |
+| `CATEGORY_HEALTH_ENABLED` | false | Enable Health category |
+
+### How It Works
+
+1. Email is sent to AI with category-aware prompt
+2. AI returns both Rating (0-10) and Category
+3. If category matches an enabled category, email moves to `Inbox/{Category}`
+4. Rating logic still applies (flagged if 7+, etc.)
+5. If no category matches, falls back to rating-only behavior
 
 ## Health Check Endpoints
 
